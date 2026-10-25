@@ -1,0 +1,5 @@
+c++ -std=c++17 -O2 -pthread -Iinclude -Itests tests/book_test.cpp    -o /tmp/book    && /tmp/book
+RESULT|book_bbo|pass|best bid/ask + cancel correct
+RESULT|symmap|pass|put/get/overwrite/absent correct
+METRIC|book_bbo_ns_per_op|1.02552
+METRIC|symmap_get_ns_per_op|5.84533

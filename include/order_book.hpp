@@ -2,11 +2,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cstdio>
+#include <cstring>
 #include <unordered_map>
 // HW7 — flat, price-indexed order book + open-addressing symbol->id map.
 // side 'B'=bid, 'S'=ask.  SymMap::get returns (uint64_t)-1 if absent.
-// BEFORE version = lab guided implementation (labs/week07.md).
 
 static constexpr double OB_TICK = 0.01;
 static constexpr int    OB_NLEV = 1 << 16;
@@ -57,34 +56,51 @@ struct Book {
 
 struct SymMap {
     static constexpr int CAP = 1 << 12;
-    struct Slot { char key[16]{}; uint64_t id = (uint64_t)-1; bool used = false; };
+    struct Slot { uint64_t k0 = 0, k1 = 0, id = 0; bool used = false; };
     std::array<Slot, CAP> t_{};
     int size_ = 0;
-    static uint64_t hash(const char* s) {
-        uint64_t h = 1469598103934665603ull;
-        for (; *s; ++s) { h ^= (uint8_t)*s; h *= 1099511628211ull; }
+
+    static void pack(const char* s, uint64_t& k0, uint64_t& k1) {
+        char buf[16] = {};
+        for (int i = 0; i < 16 && s[i] != '\0'; ++i) {
+            buf[i] = s[i];
+        }
+        std::memcpy(&k0, buf, 8);
+        std::memcpy(&k1, buf + 8, 8);
+    }
+
+    static uint64_t hash(uint64_t k0, uint64_t k1) {
+        uint64_t h = k0 * 11400714819323198485ull ^ k1;
+        h ^= h >> 32;
         return h;
     }
-    static bool keq(const char* a, const char* b) {
-        for (int i = 0; i < 16; ++i) { if (a[i] != b[i]) return false; if (!a[i]) return true; }
-        return true;
-    }
+
     void put(const char* sym, uint64_t id) {
-        int i = static_cast<int>(hash(sym) & (CAP - 1));
+        uint64_t k0, k1; pack(sym, k0, k1);
+        int i = static_cast<int>(hash(k0, k1) & (CAP - 1));
         for (;; i = (i + 1) & (CAP - 1)) {
-            if (t_[i].used && keq(t_[i].key, sym)) { t_[i].id = id; return; }
+            if (t_[i].used && t_[i].k0 == k0 && t_[i].k1 == k1) {
+                t_[i].id = id;
+                return;
+            }
             if (!t_[i].used) {
-                if (size_ * 10 >= CAP * 7) return;
-                std::snprintf(t_[i].key, 16, "%s", sym);   // BUG: 16-char keys truncated (fix later)
-                t_[i].id = id; t_[i].used = true; ++size_; return;
+                if (size_ * 10 >= CAP * 7) return; // load factor guard (70%)
+                t_[i].k0 = k0;
+                t_[i].k1 = k1;
+                t_[i].id = id;
+                t_[i].used = true;
+                ++size_;
+                return;
             }
         }
     }
+
     uint64_t get(const char* sym) const {
-        int i = static_cast<int>(hash(sym) & (CAP - 1));
+        uint64_t k0, k1; pack(sym, k0, k1);
+        int i = static_cast<int>(hash(k0, k1) & (CAP - 1));
         for (;; i = (i + 1) & (CAP - 1)) {
-            if (!t_[i].used)         return (uint64_t)-1;
-            if (keq(t_[i].key, sym)) return t_[i].id;
+            if (!t_[i].used) return static_cast<uint64_t>(-1);
+            if (t_[i].k0 == k0 && t_[i].k1 == k1) return t_[i].id;
         }
     }
 };

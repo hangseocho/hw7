@@ -1,0 +1,50 @@
+bench_containers — Session 6 / HW 7.  steady_clock resolution here: ~41 ns
+columns: add/cancel = mean ns per op building from empty / cancelling all in random order;
+         bbo = best_bid()+best_ask() on a churned book (ns per call);
+         p50/p99 = ns/op over batches of 32 consecutive ops
+
+N = 64 resting orders (256 price levels per side)
+  structure                                  add ns  cancel ns     bbo ns        add p50/p99    cancel p50/p99
+  1a vector (unsorted)                          3.9        6.9      79.35       3.9 /     6.5      9.1 /    10.4
+  1b vector (sorted by price)                  19.9       10.7       0.61      22.1 /    32.6     15.6 /    23.4
+  2  list + unordered_map<id,it>               27.8       23.9      95.17      29.9 /    41.7     19.5 /    28.7
+  3  map<tick,Level> + umap (no reserve)       35.5       31.4       2.29      40.4 /    43.0     32.6 /    35.2
+  3  map<tick,Level> + umap (reserve)          30.8       30.2       2.29      30.0 /    41.7     29.9 /    41.7
+  4  flat Book (lab, banded)                   21.1      311.2       0.77      24.7 /    36.4     24.8 /   635.4
+  4  YOUR include/order_book.hpp               21.0      313.2       0.76      23.4 /    27.3     26.1 /   695.3
+
+N = 1024 resting orders (256 price levels per side)
+  structure                                  add ns  cancel ns     bbo ns        add p50/p99    cancel p50/p99
+  1a vector (unsorted)                          1.6       84.6    1333.54       1.3 /     9.1     88.5 /   164.1
+  1b vector (sorted by price)                  84.6      147.4       0.63      91.2 /   145.8    171.9 /   342.5
+  2  list + unordered_map<id,it>               24.8       23.4    2005.71      22.1 /    59.9     19.5 /    27.3
+  3  map<tick,Level> + umap (no reserve)       58.0       51.8       3.23      54.7 /    95.0     49.5 /    82.0
+  3  map<tick,Level> + umap (reserve)          56.9       54.5       3.18      56.0 /    76.8     53.4 /    74.2
+  4  flat Book (lab, banded)                   16.1       35.3       0.77      13.0 /    46.9     15.6 /   605.5
+  4  YOUR include/order_book.hpp               15.3       34.8       0.77      13.0 /    46.9     15.6 /   604.2
+
+N = 16384 resting orders (256 price levels per side)
+  structure                                  add ns  cancel ns     bbo ns        add p50/p99    cancel p50/p99
+  1a vector (unsorted)                          3.2     1255.4   55332.25       1.3 /    16.9   1247.4 /  2639.3
+  1b vector (sorted by price)                1095.0     2582.1       0.63    1072.9 /  2500.0   2757.8 /  6102.9
+  2  list + unordered_map<id,it>               24.3       25.1   92544.17      22.1 /    50.8     24.8 /    29.9
+  3  map<tick,Level> + umap (no reserve)       47.8       56.0       3.24      44.2 /    97.7     56.0 /    63.8
+  3  map<tick,Level> + umap (reserve)          46.0       58.3       3.25      44.3 /    67.7     58.6 /    79.4
+  4  flat Book (lab, banded)                   16.3       20.4       0.77      13.0 /    32.6     19.5 /    37.8
+  4  YOUR include/order_book.hpp               15.6       20.5       0.79      13.0 /    45.6     19.5 /    37.8
+
+Step 2 — node sizes (64-byte cache lines)
+  sizeof(Ord)                       = 32 bytes  -> 2 orders per line in a vector
+  std::list<Ord> node  (Ord + 2 ptr) = 48 bytes  (+ malloc header/rounding)
+  std::forward_list node (Ord + ptr) = 40 bytes
+  scanning 16,384 orders: vector touches 8192 lines in order (prefetched);
+  a list touches up to 16,384 lines, each address known only after the last load
+
+Step 3 — rehash spike: 1048576 inserts into unordered_map<uint64_t, Ord>
+                 p50 ns   p99 ns  p99.9 ns       max ns   total ms  rehashes
+  no reserve         41      291      1000     32819875       96.1        20
+  reserve(n)         41      125       709        38000       29.8         0
+
+Step 4 — symbol lookup, 8 symbols (CAP 4096 -> load factor 0.20%)
+  SymMap::get (open addressing)                3.59 ns/op
+  unordered_map<std::string,uint64_t>::find   12.57 ns/op   (3.5x)

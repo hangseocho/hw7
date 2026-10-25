@@ -23,3 +23,11 @@ I pack each key (at most 16 chars) into two 64-bit integers `k0, k1`. The hash b
 ## What didn't work, and measurement notes
 I tried replacing the copy loop in `pack()` with `strnlen` + `memcpy`. It was slower (~5.7 ns): with a variable length, both become library calls, and for 4–5 character symbols the call and branch overhead costs more than the short inline loop, so I reverted it.
 I report the median of 7 runs because individual runs varied a lot, from OS background noise and because the Mac schedules the process on either a performance or an efficiency core. The `get` timings clustered around ~2.5–3 ns and ~5.7 ns, so a mean would be misleading.
+
+## Cycles/op (Apple M2, performance-core clock ≈ 3.49 GHz)
+cycles/op = ns/op × 3.49. Approximate: the clock is not fixed, and runs on an efficiency core (~2.4 GHz) take longer in ns.
+
+| Metric | Before (lab) | After (mine) | Baseline |
+|---|---|---|---|
+| `SymMap::get` | ~14.6 cycles | **~10.5 cycles** | `unordered_map` find ~43 cycles |
+| `best_bid()+best_ask()` | ~2.4 cycles | ~2.5 cycles | `std::map` ~11–16 cycles |
